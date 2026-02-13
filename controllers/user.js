@@ -91,18 +91,23 @@ async function handleDeleteUser(req, res) {
   try {
     const id = req.params.id;
 
-    const userToBeDeleted = await User.findByIdAndDelete(id);
+    const user = await User.findById(id);
 
-    if (!userToBeDeleted) {
+    if (!user) {
       return res.status(404).json({ msg: "User not found" });
     }
 
+    if (user.userRole === "admin") {
+      return res.status(403).json({ msg: "Admin cannot be deleted" });
+    }
+
+    await User.findByIdAndDelete(id);
+
     return res.json({
-      userId: userToBeDeleted._id,
+      userId: id,
       msg: "User deleted successfully",
     });
   } catch (err) {
-    console.error(err);
     return res.status(500).json({ msg: "Internal server error" });
   }
 }
@@ -125,9 +130,43 @@ async function handleGetUser(req, res) {
   }
 }
 
+async function handleChangePassword(req, res) {
+  try {
+    const { oldPassword, newPassword } = req.body;
+    const userId = req.user.userId; // from JWT middleware
+
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ msg: "All fields are required" });
+    }
+
+    const user = await User.findById(userId).select("+userPassword");
+
+    if (!user) {
+      return res.status(404).json({ msg: "User not found" });
+    }
+
+    const isMatch = await bcrypt.compare(oldPassword, user.userPassword);
+
+    if (!isMatch) {
+      return res.status(400).json({ msg: "Old password is incorrect" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    user.userPassword = hashedPassword;
+    await user.save();
+
+    return res.json({ msg: "Password updated successfully" });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ msg: "Internal server error" });
+  }
+}
+
 module.exports = {
   handleCreateUser,
   handleUserLogin,
   handleDeleteUser,
   handleGetUser,
+  handleChangePassword,
 };
