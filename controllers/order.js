@@ -430,11 +430,32 @@ async function handleOrdersWithBalanceByCustomer(req, res) {
       status: { $ne: "paid" },
     }).populate("items.product", "name");
 
+    // const formatted = orders.map((o) => ({
+    //   orderId: o._id,
+    //   order_date: o.createdAt,
+    //   payable: o.totalAmount,
+    //   balance: o.balanceAmount,
+    //   items: o.items.map((i) => ({
+    //     product_name: i.product?.name,
+    //     quantity: i.qty,
+    //     rate: i.price,
+    //   })),
+    // }));
+
     const formatted = orders.map((o) => ({
       orderId: o._id,
       order_date: o.createdAt,
+
+      subTotal: o.subTotal,
+      gstPercent: o.gstPercent,
+      gstAmount: o.gstAmount,
+      extraCharges: o.extraCharges,
+      discount: o.discount,
+
       payable: o.totalAmount,
+      paidAmount: o.paidAmount,
       balance: o.balanceAmount,
+
       items: o.items.map((i) => ({
         product_name: i.product?.name,
         quantity: i.qty,
