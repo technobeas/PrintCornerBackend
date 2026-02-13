@@ -238,6 +238,30 @@ async function handleEditOrder(req, res) {
 
     await order.save();
 
+    /* ===============================
+   5️⃣ ADJUST REVENUE IF NEEDED
+=============================== */
+
+    const oldTotalRevenue = await Revenue.aggregate([
+      { $match: { order: order._id } },
+      { $group: { _id: null, total: { $sum: "$amount" } } },
+    ]);
+
+    const alreadyRecordedRevenue = oldTotalRevenue[0]?.total || 0;
+
+    // If order is fully paid, revenue should match totalAmount
+    if (order.status === "paid") {
+      const difference = order.totalAmount - alreadyRecordedRevenue;
+
+      if (difference !== 0) {
+        await Revenue.create({
+          source: "order",
+          order: order._id,
+          amount: difference,
+        });
+      }
+    }
+
     res.json(order);
   } catch (err) {
     console.error(err);
@@ -487,35 +511,80 @@ async function handleCustomerBulkPay(req, res) {
       status: { $ne: "paid" },
     }).sort({ createdAt: 1 });
 
+    // for (const order of orders) {
+    //   if (remaining <= 0) break;
+
+    //   if (order.balanceAmount <= remaining) {
+    //     remaining -= order.balanceAmount;
+    //     order.paidAmount += order.balanceAmount;
+    //     order.balanceAmount = 0;
+    //     order.status = "paid";
+    //   } else {
+    //     order.paidAmount += remaining;
+    //     order.balanceAmount -= remaining;
+    //     order.status = "partial";
+    //     remaining = 0;
+    //   }
+
+    //   await order.save();
+
+    //   // await Payment.create({
+    //   //   order: order._id,
+    //   //   customer: customerId,
+    //   //   amount,
+    //   //   paymentMode: "cash",
+    //   // });
+
+    //   // await Revenue.create({
+    //   //   source: "order",
+    //   //   order: order._id,
+    //   //   amount,
+    //   // });
+
+    //   const paidNow =
+    //     order.balanceAmount <= remaining ? order.balanceAmount : remaining;
+
+    //   await Payment.create({
+    //     order: order._id,
+    //     customer: customerId,
+    //     amount: paidNow,
+    //     paymentMode: "cash",
+    //   });
+
+    //   await Revenue.create({
+    //     source: "order",
+    //     order: order._id,
+    //     amount: paidNow,
+    //   });
+    // }
+
     for (const order of orders) {
       if (remaining <= 0) break;
 
-      if (order.balanceAmount <= remaining) {
-        remaining -= order.balanceAmount;
-        order.paidAmount += order.balanceAmount;
-        order.balanceAmount = 0;
-        order.status = "paid";
-      } else {
-        order.paidAmount += remaining;
-        order.balanceAmount -= remaining;
-        order.status = "partial";
-        remaining = 0;
-      }
+      const payable = order.balanceAmount; // original balance
+      const paidNow = Math.min(payable, remaining);
+
+      order.paidAmount += paidNow;
+      order.balanceAmount -= paidNow;
+
+      order.status = order.balanceAmount <= 0 ? "paid" : "partial";
 
       await order.save();
 
       await Payment.create({
         order: order._id,
         customer: customerId,
-        amount,
+        amount: paidNow,
         paymentMode: "cash",
       });
 
       await Revenue.create({
         source: "order",
         order: order._id,
-        amount,
+        amount: paidNow,
       });
+
+      remaining -= paidNow; // reduce AFTER creating records
     }
 
     const totalBalance = await Order.aggregate([
